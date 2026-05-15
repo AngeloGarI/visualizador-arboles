@@ -774,20 +774,23 @@ class TreeVisualizerWindow(QMainWindow):
         self.animate_values(preorder)
 
     def clear_tree(self) -> None:
-        answer = QMessageBox.question(
-            self,
-            "Eliminar arbol",
-            "Deseas borrar todos los nodos para construir otro arbol?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Eliminar árbol")
+        msg.setText("¿Deseas borrar todos los nodos para construir otro árbol?")
+        msg.setIcon(QMessageBox.Icon.Question)
 
-        if answer == QMessageBox.StandardButton.Yes:
+        boton_si = msg.addButton("Sí", QMessageBox.ButtonRole.YesRole)
+        boton_no = msg.addButton("No", QMessageBox.ButtonRole.NoRole)
+
+        msg.exec()
+
+        if msg.clickedButton() == boton_si:
             self.tree.clear()
             self.highlight_values = set()
 
-            self.traversal_label.setText("Arbol vacio.")
+            self.traversal_label.setText("Árbol vacío.")
             self.rotation_label.setText("Sin rotaciones registradas.")
-            self.status_label.setText("Arbol eliminado. Puedes construir uno nuevo.")
+            self.status_label.setText("Árbol eliminado. Puedes construir uno nuevo.")
 
             self.refresh()
 
@@ -867,16 +870,25 @@ class TreeVisualizerWindow(QMainWindow):
     def _update_metrics(self) -> None:
         info = self.tree.get_info()
 
-        self.type_metric.value_label.setText(str(info.get("type", "-")))
+        tree_type = str(info.get("type", "-"))
+
+        if tree_type in ["BinaryTree", "Binary Tree"]:
+            tree_type = "Árbol Binario"
+        elif tree_type == "BST":
+            tree_type = "BST"
+        elif tree_type == "AVL":
+            tree_type = "AVL"
+
+        self.type_metric.value_label.setText(tree_type)
         self.root_metric.value_label.setText(self._root_text())
         self.height_metric.value_label.setText(str(info.get("height", 0)))
         self.count_metric.value_label.setText(str(info.get("node_count", 0)))
 
         balanced = info.get("is_balanced")
         if balanced is True:
-            text = "Si"
+            text = "Balanceado"
         elif balanced is False:
-            text = "No"
+            text = "Desbalanceado"
         else:
             text = "No aplica"
 
