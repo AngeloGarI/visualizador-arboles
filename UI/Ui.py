@@ -28,6 +28,7 @@ try:
         QMainWindow,
         QMessageBox,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QVBoxLayout,
         QWidget,
@@ -165,14 +166,6 @@ class TreeCanvas(QGraphicsView):
         label.setDefaultTextColor(QColor(self.colors.ink))
         label.setPos(pos.x() - label.boundingRect().width() / 2, pos.y() - 17)
 
-        if isinstance(self.tree, AVL):
-            detail = self.scene.addText(
-                f"h:{node.height}  fb:{node.balance}",
-                QFont("Segoe UI", 8),
-            )
-            detail.setDefaultTextColor(QColor(self.colors.muted))
-            detail.setPos(pos.x() - detail.boundingRect().width() / 2, pos.y() + 8)
-
         self._draw_nodes(node.left, positions)
         self._draw_nodes(node.right, positions)
 
@@ -234,11 +227,27 @@ class TreeVisualizerWindow(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("Panel")
-        sidebar.setFixedWidth(318)
+        sidebar.setFixedWidth(340)
 
-        side_layout = QVBoxLayout(sidebar)
+        sidebar_outer = QVBoxLayout(sidebar)
+        sidebar_outer.setContentsMargins(0, 0, 0, 0)
+        sidebar_outer.setSpacing(0)
+
+        self.sidebar_scroll = QScrollArea()
+        self.sidebar_scroll.setObjectName("SidebarScroll")
+        self.sidebar_scroll.setWidgetResizable(True)
+        self.sidebar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        sidebar_content = QWidget()
+        sidebar_content.setObjectName("SidebarContent")
+
+        side_layout = QVBoxLayout(sidebar_content)
         side_layout.setContentsMargins(18, 18, 18, 18)
         side_layout.setSpacing(12)
+
+        self.sidebar_scroll.setWidget(sidebar_content)
+        sidebar_outer.addWidget(self.sidebar_scroll)
 
         content.addWidget(sidebar)
 
@@ -287,6 +296,7 @@ class TreeVisualizerWindow(QMainWindow):
         self.tree_type_combo = QComboBox()
         self.tree_type_combo.addItems(self.TREE_TYPES.keys())
         self.tree_type_combo.setCurrentText("AVL")
+        self.tree_type_combo.setMinimumHeight(34)
         self.tree_type_combo.currentTextChanged.connect(self.change_tree_type)
         layout.addWidget(self.tree_type_combo)
 
@@ -294,10 +304,12 @@ class TreeVisualizerWindow(QMainWindow):
 
         self.value_input = QLineEdit()
         self.value_input.setPlaceholderText("Valor entero")
+        self.value_input.setMinimumHeight(34)
         self.value_input.returnPressed.connect(self.insert_value)
 
         insert_button = QPushButton("Insertar")
         insert_button.setObjectName("PrimaryButton")
+        insert_button.setMinimumHeight(34)
         insert_button.clicked.connect(self.insert_value)
 
         input_row.addWidget(self.value_input, stretch=1)
@@ -309,13 +321,14 @@ class TreeVisualizerWindow(QMainWindow):
         actions.setSpacing(8)
 
         self._button(actions, "Buscar", self.search_value, 0, 0)
-        self._button(actions, "Eliminar", self.delete_value, 0, 1)
+        self._button(actions, "Eliminar nodo", self.delete_value, 0, 1)
         self._button(actions, "Preorden", lambda: self.show_traversal("preorder"), 1, 0)
         self._button(actions, "Inorden", lambda: self.show_traversal("inorder"), 1, 1)
         self._button(actions, "Postorden", lambda: self.show_traversal("postorder"), 2, 0)
-        self._button(actions, "Limpiar", self.clear_tree, 2, 1, danger=True)
-        self._button(actions, "Guardar", self.save_tree, 3, 0)
-        self._button(actions, "Cargar", self.load_tree, 3, 1)
+        self._button(actions, "Tres recorridos", self.show_all_traversals, 2, 1)
+        self._button(actions, "Eliminar arbol", self.clear_tree, 3, 0, danger=True)
+        self._button(actions, "Guardar", self.save_tree, 3, 1)
+        self._button(actions, "Cargar", self.load_tree, 4, 0)
 
         layout.addLayout(actions)
 
@@ -346,6 +359,16 @@ class TreeVisualizerWindow(QMainWindow):
 
         self._separator(layout)
 
+        layout.addWidget(self._section_label("Recorridos actuales"))
+        self.preorder_card = self._traversal_card("Preorden")
+        self.inorder_card = self._traversal_card("Inorden")
+        self.postorder_card = self._traversal_card("Postorden")
+        layout.addWidget(self.preorder_card)
+        layout.addWidget(self.inorder_card)
+        layout.addWidget(self.postorder_card)
+
+        self._separator(layout)
+
         layout.addWidget(self._section_label("Leyenda visual"))
         layout.addWidget(self._legend_row("Nodo normal", self.colors.node, self.colors.ink))
         layout.addWidget(self._legend_row("Visitado / resultado", self.colors.focus, self.colors.warning))
@@ -372,6 +395,7 @@ class TreeVisualizerWindow(QMainWindow):
 
     def _button(self, layout: QGridLayout, text: str, slot, row: int, column: int, danger: bool = False) -> None:
         button = QPushButton(text)
+        button.setMinimumHeight(34)
         if danger:
             button.setObjectName("DangerButton")
 
@@ -392,6 +416,7 @@ class TreeVisualizerWindow(QMainWindow):
     def _metric_card(self, title: str, value: str) -> QFrame:
         card = QFrame()
         card.setObjectName("Metric")
+        card.setMinimumHeight(58)
 
         title_label = QLabel(title)
         title_label.setObjectName("MetricTitle")
@@ -403,6 +428,28 @@ class TreeVisualizerWindow(QMainWindow):
 
         box = QVBoxLayout(card)
         box.setContentsMargins(10, 8, 10, 8)
+        box.addWidget(title_label)
+        box.addWidget(value_label)
+
+        return card
+
+    def _traversal_card(self, title: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("TraversalCard")
+        card.setMinimumHeight(54)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("TraversalTitle")
+
+        value_label = QLabel("(vacio)")
+        value_label.setObjectName("TraversalValue")
+        value_label.setWordWrap(True)
+
+        card.value_label = value_label
+
+        box = QVBoxLayout(card)
+        box.setContentsMargins(10, 7, 10, 7)
+        box.setSpacing(2)
         box.addWidget(title_label)
         box.addWidget(value_label)
 
@@ -435,6 +482,14 @@ class TreeVisualizerWindow(QMainWindow):
                 color: {self.colors.ink};
                 font-family: Segoe UI, Arial;
                 font-size: 14px;
+            }}
+
+            QWidget#SidebarContent,
+            QScrollArea#SidebarScroll,
+            QScrollArea#SidebarScroll > QWidget,
+            QScrollArea#SidebarScroll > QWidget > QWidget {{
+                background: transparent;
+                border: none;
             }}
 
             QLabel#Title {{
@@ -484,6 +539,23 @@ class TreeVisualizerWindow(QMainWindow):
                 font-weight: 700;
             }}
 
+            QFrame#TraversalCard {{
+                background: #fbfdff;
+                border: 1px solid {self.colors.border};
+                border-radius: 8px;
+            }}
+
+            QLabel#TraversalTitle {{
+                color: {self.colors.muted};
+                font-size: 12px;
+                font-weight: 700;
+            }}
+
+            QLabel#TraversalValue {{
+                color: {self.colors.ink};
+                font-size: 12px;
+            }}
+
             QLabel#Status {{
                 padding: 8px 12px;
                 background: #dde8f7;
@@ -497,6 +569,8 @@ class TreeVisualizerWindow(QMainWindow):
                 border: 1px solid {self.colors.border};
                 border-radius: 8px;
                 padding: 9px 10px;
+                color: {self.colors.ink};
+                min-height: 20px;
             }}
 
             QLineEdit:focus,
@@ -510,6 +584,8 @@ class TreeVisualizerWindow(QMainWindow):
                 border-radius: 8px;
                 padding: 9px 10px;
                 font-weight: 600;
+                color: {self.colors.ink};
+                min-height: 20px;
             }}
 
             QPushButton:hover {{
@@ -557,7 +633,7 @@ class TreeVisualizerWindow(QMainWindow):
         self.highlight_values = set()
         self.traversal_label.setText("Arbol nuevo. Inserta valores para empezar.")
         self.rotation_label.setText("Sin rotaciones registradas.")
-        self.status_label.setText(f"Tipo cambiado a {text}.")
+        self.status_label.setText(f"Tipo cambiado a {text}. Raiz actual: {self._root_text()}.")
 
         self.refresh()
 
@@ -571,7 +647,7 @@ class TreeVisualizerWindow(QMainWindow):
         self.highlight_values = set()
         self.traversal_label.setText("Ejemplo cargado: 50 -> 30 -> 70 -> 20 -> 40 -> 60 -> 80")
         self.rotation_label.setText("Usa los botones para animar recorridos, busquedas e inserciones.")
-        self.status_label.setText("Arbol de ejemplo insertado.")
+        self.status_label.setText(f"Arbol de ejemplo insertado. Raiz actual: {self._root_text()}.")
 
         self.refresh()
 
@@ -596,18 +672,22 @@ class TreeVisualizerWindow(QMainWindow):
         if isinstance(self.tree, AVL):
             _node, path, rotations = self.tree.insert(value)
             if rotations:
-                self.rotation_label.setText("Rotaciones: " + ", ".join(rotations))
+                self.rotation_label.setText(
+                    "Rotaciones: "
+                    + ", ".join(rotations)
+                    + f" | Raiz actual: {self._root_text()}"
+                )
             else:
-                self.rotation_label.setText("No se requirieron rotaciones.")
+                self.rotation_label.setText(f"No se requirieron rotaciones. Raiz actual: {self._root_text()}.")
         else:
             _node, path = self.tree.insert(value)
-            self.rotation_label.setText("Insercion realizada sin rotaciones.")
+            self.rotation_label.setText(f"Insercion realizada sin rotaciones. Raiz actual: {self._root_text()}.")
 
         visited = path + [value]
 
         self.value_input.clear()
         self.traversal_label.setText(f"Insercion de {value}. Camino: {self._format_path(visited)}")
-        self.status_label.setText(f"Valor {value} insertado.")
+        self.status_label.setText(f"Valor {value} insertado. Raiz actual: {self._root_text()}.")
 
         self.animate_values(visited, final={value})
 
@@ -620,7 +700,10 @@ class TreeVisualizerWindow(QMainWindow):
 
         self.traversal_label.setText(f"Busqueda de {value}. Camino: {self._format_path(path)}")
         self.rotation_label.setText("Busqueda recursiva resaltada en el lienzo.")
-        self.status_label.setText("Valor encontrado." if node else "Valor no encontrado.")
+        self.status_label.setText(
+            ("Valor encontrado." if node else "Valor no encontrado.")
+            + f" Raiz actual: {self._root_text()}."
+        )
 
         self.animate_values(path, final={value} if node else set())
 
@@ -632,18 +715,26 @@ class TreeVisualizerWindow(QMainWindow):
         if isinstance(self.tree, AVL):
             ok, description, rotations = self.tree.delete(value)
             if rotations:
-                self.rotation_label.setText("Rotaciones: " + ", ".join(rotations))
+                self.rotation_label.setText(
+                    "Rotaciones: "
+                    + ", ".join(rotations)
+                    + f" | Raiz actual: {self._root_text()}"
+                )
             else:
-                self.rotation_label.setText("Sin rotaciones de rebalanceo.")
+                self.rotation_label.setText(f"Sin rotaciones de rebalanceo. Raiz actual: {self._root_text()}.")
         else:
             ok, description = self.tree.delete(value)
-            self.rotation_label.setText("Eliminacion realizada.")
+            self.rotation_label.setText(f"Eliminacion realizada. Raiz actual: {self._root_text()}.")
 
         self.value_input.clear()
         self.highlight_values = set()
 
         self.traversal_label.setText(description)
-        self.status_label.setText(f"Valor {value} eliminado." if ok else description)
+        self.status_label.setText(
+            f"Valor {value} eliminado. Raiz actual: {self._root_text()}."
+            if ok
+            else description
+        )
 
         self.refresh()
 
@@ -658,15 +749,32 @@ class TreeVisualizerWindow(QMainWindow):
 
         self.traversal_label.setText(f"{names[kind]}: {self._format_path(values)}")
         self.rotation_label.setText("Recorrido recursivo animado paso a paso.")
-        self.status_label.setText(f"Mostrando recorrido {names[kind].lower()}.")
+        self.status_label.setText(f"Mostrando recorrido {names[kind].lower()}. Raiz actual: {self._root_text()}.")
 
         self.animate_values(values)
+
+    def show_all_traversals(self) -> None:
+        preorder = self.tree.preorder()
+        inorder = self.tree.inorder()
+        postorder = self.tree.postorder()
+
+        self.traversal_label.setText(
+            "Preorden: "
+            + self._format_path(preorder)
+            + " | Inorden: "
+            + self._format_path(inorder)
+            + " | Postorden: "
+            + self._format_path(postorder)
+        )
+        self.rotation_label.setText("Los tres recorridos estan visibles en el panel lateral.")
+        self.status_label.setText(f"Recorridos actualizados. Raiz actual: {self._root_text()}.")
+        self.animate_values(preorder)
 
     def clear_tree(self) -> None:
         answer = QMessageBox.question(
             self,
-            "Limpiar arbol",
-            "Deseas eliminar todos los nodos del arbol actual?",
+            "Eliminar arbol",
+            "Deseas borrar todos los nodos para construir otro arbol?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -676,7 +784,7 @@ class TreeVisualizerWindow(QMainWindow):
 
             self.traversal_label.setText("Arbol vacio.")
             self.rotation_label.setText("Sin rotaciones registradas.")
-            self.status_label.setText("Arbol limpiado.")
+            self.status_label.setText("Arbol eliminado. Puedes construir uno nuevo.")
 
             self.refresh()
 
@@ -716,7 +824,7 @@ class TreeVisualizerWindow(QMainWindow):
 
             self.traversal_label.setText(f"Cargado: {os.path.basename(file_path)}")
             self.rotation_label.setText("Estructura reconstruida desde JSON.")
-            self.status_label.setText("Arbol cargado correctamente.")
+            self.status_label.setText(f"Arbol cargado correctamente. Raiz actual: {self._root_text()}.")
 
             self.refresh()
         except Exception as exc:
@@ -750,13 +858,14 @@ class TreeVisualizerWindow(QMainWindow):
 
     def refresh(self) -> None:
         self._update_metrics()
+        self._update_traversal_panel()
         self.canvas.set_tree(self.tree, self.highlight_values)
 
     def _update_metrics(self) -> None:
         info = self.tree.get_info()
 
         self.type_metric.value_label.setText(str(info.get("type", "-")))
-        self.root_metric.value_label.setText(str(info.get("root", "-")))
+        self.root_metric.value_label.setText(self._root_text())
         self.height_metric.value_label.setText(str(info.get("height", 0)))
         self.count_metric.value_label.setText(str(info.get("node_count", 0)))
 
@@ -770,6 +879,11 @@ class TreeVisualizerWindow(QMainWindow):
 
         self.balance_metric.value_label.setText(text)
 
+    def _update_traversal_panel(self) -> None:
+        self.preorder_card.value_label.setText(self._format_path(self.tree.preorder()))
+        self.inorder_card.value_label.setText(self._format_path(self.tree.inorder()))
+        self.postorder_card.value_label.setText(self._format_path(self.tree.postorder()))
+
     def _display_type(self, tree) -> str:
         if isinstance(tree, AVL):
             return "AVL"
@@ -781,6 +895,10 @@ class TreeVisualizerWindow(QMainWindow):
         if not values:
             return "(sin nodos visitados)"
         return " -> ".join(str(value) for value in values)
+
+    def _root_text(self) -> str:
+        root = self.tree.root_value
+        return "-" if root is None else str(root)
 
 
 def main() -> None:
