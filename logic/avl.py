@@ -315,3 +315,62 @@ class AVL(BST):
         factors[node.value] = node.balance
         self._collect_balance_factors(node.left,  factors)
         self._collect_balance_factors(node.right, factors)
+
+    # ================================================================== #
+    #  Estructura por niveles enriquecida (para la GUI)                  #
+    # ================================================================== #
+
+    def to_level_list(self) -> list[list[dict]]:
+        """
+        Retorna el árbol estructurado por niveles, donde cada nodo
+        es un diccionario con toda la información que la GUI necesita
+        para dibujarlo sin tener que acceder al árbol directamente.
+
+        Formato de retorno:
+        [
+            [{"value": 20, "height": 3, "balance": 0, "is_leaf": False}],  # nivel 0
+            [{"value": 10, ...}, {"value": 30, ...}],                       # nivel 1
+            ...
+        ]
+
+        Útil para que Persona 2 pueda dibujar el árbol sin acceder
+        a los nodos internos directamente.
+        """
+        if self.root is None:
+            return []
+
+        from collections import deque
+        result: list[list[dict]] = []
+        queue = deque([self.root])
+
+        while queue:
+            level_size = len(queue)
+            level: list[dict] = []
+
+            for _ in range(level_size):
+                node = queue.popleft()
+                level.append({
+                    "value":   node.value,
+                    "height":  node.height,
+                    "balance": node.balance,
+                    "is_leaf": node.is_leaf(),
+                })
+                if node.left:
+                    queue.append(node.left)
+                if node.right:
+                    queue.append(node.right)
+
+            result.append(level)
+
+        return result
+
+    # ================================================================== #
+    #  get_full_info para AVL                                             #
+    # ================================================================== #
+
+    def get_full_info(self) -> dict:
+        """Versión extendida con todas las métricas del AVL."""
+        info = super().get_full_info()
+        info["is_balanced"]     = self._is_balanced(self.root)
+        info["balance_factors"] = self.get_balance_factors()
+        return info
