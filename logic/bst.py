@@ -217,3 +217,195 @@ class BST(BinaryTree):
             self._validate(node.left,  min_val,    node.value) and
             self._validate(node.right, node.value, max_val)
         )
+
+    # ================================================================== #
+    #  Mínimo y máximo públicos                                           #
+    # ================================================================== #
+
+    def get_min(self):
+        """
+        Retorna el valor mínimo del BST (nodo más a la izquierda).
+        O(h) — no necesita recorrer todo el árbol.
+        Retorna None si el árbol está vacío.
+        """
+        if self.root is None:
+            return None
+        return self._min_node(self.root).value
+
+    def get_max(self):
+        """
+        Retorna el valor máximo del BST (nodo más a la derecha).
+        O(h) — no necesita recorrer todo el árbol.
+        Retorna None si el árbol está vacío.
+        """
+        if self.root is None:
+            return None
+        return self._max_node(self.root).value
+
+    # ================================================================== #
+    #  Sucesor y predecesor inorden                                       #
+    # ================================================================== #
+
+    def successor(self, value):
+        """
+        Retorna el sucesor inorden del valor dado:
+        el valor más pequeño que sea MAYOR al dado.
+
+        Casos:
+          - Si el nodo tiene subárbol derecho → mínimo del subárbol derecho.
+          - Si no tiene subárbol derecho → el ancestro más cercano desde
+            el cual descendimos por la izquierda.
+
+        Retorna None si el valor no existe o si es el máximo del árbol.
+        """
+        # Verificar existencia primero — evita retornar candidato incorrecto
+        found, _ = self.search(value)
+        if found is None:
+            return None
+        result = self._successor_recursive(self.root, value, None)
+        return result.value if result else None
+
+    def _successor_recursive(
+        self,
+        node:      Node | None,
+        value,
+        candidate: Node | None,
+    ) -> Node | None:
+        """
+        Recorre el árbol manteniendo el candidato a sucesor.
+        Cuando vamos a la izquierda, el nodo actual es un candidato
+        (es mayor que value y podría ser el más cercano).
+        """
+        if node is None:
+            return candidate
+
+        if value == node.value:
+            # Encontramos el nodo: si tiene hijo derecho, el sucesor
+            # es el mínimo de ese subárbol
+            if node.right:
+                return self._min_node(node.right)  # type: ignore[return-value]
+            # Si no, el candidato guardado durante el descenso es el sucesor
+            return candidate
+
+        elif value < node.value:
+            # Bajamos a la izquierda → node es un candidato a sucesor
+            return self._successor_recursive(node.left, value, node)
+        else:
+            # Bajamos a la derecha → node no puede ser sucesor
+            return self._successor_recursive(node.right, value, candidate)
+
+    def predecessor(self, value):
+        """
+        Retorna el predecesor inorden del valor dado:
+        el valor más grande que sea MENOR al dado.
+
+        Simétrico al sucesor pero en dirección contraria.
+        Retorna None si el valor no existe o si es el mínimo del árbol.
+        """
+        # Verificar existencia primero — evita retornar candidato incorrecto
+        found, _ = self.search(value)
+        if found is None:
+            return None
+        result = self._predecessor_recursive(self.root, value, None)
+        return result.value if result else None
+
+    def _predecessor_recursive(
+        self,
+        node:      Node | None,
+        value,
+        candidate: Node | None,
+    ) -> Node | None:
+        if node is None:
+            return candidate
+
+        if value == node.value:
+            if node.left:
+                return self._max_node(node.left)   # type: ignore[return-value]
+            return candidate
+
+        elif value > node.value:
+            # Bajamos a la derecha → node es candidato a predecesor
+            return self._predecessor_recursive(node.right, value, node)
+        else:
+            # Bajamos a la izquierda → node no puede ser predecesor
+            return self._predecessor_recursive(node.left, value, candidate)
+
+    # ================================================================== #
+    #  Búsqueda por rango                                                 #
+    # ================================================================== #
+
+    def range_search(self, low, high) -> list:
+        """
+        Retorna todos los valores del BST en el rango [low, high] inclusivo,
+        en orden ascendente. Implementado recursivamente aprovechando
+        la propiedad BST para descartar ramas enteras.
+
+        Complejidad: O(k + h) donde k = nodos en el rango, h = altura.
+        Mucho más eficiente que recorrer todo el árbol.
+
+        Ejemplo: range_search(20, 50) → [20, 30, 40, 50]
+        """
+        result: list = []
+        self._range_search_recursive(self.root, low, high, result)
+        return result
+
+    def _range_search_recursive(
+        self,
+        node:   Node | None,
+        low,
+        high,
+        result: list,
+    ) -> None:
+        """
+        Recorre el árbol descartando subárboles completos cuando sabe
+        que todos sus valores están fuera del rango.
+        """
+        if node is None:
+            return
+
+        # Si el valor actual es mayor que low → puede haber valores
+        # en el rango en el subárbol izquierdo
+        if node.value > low:
+            self._range_search_recursive(node.left, low, high, result)
+
+        # Si el valor actual está en el rango → incluirlo
+        if low <= node.value <= high:
+            result.append(node.value)
+
+        # Si el valor actual es menor que high → puede haber valores
+        # en el rango en el subárbol derecho
+        if node.value < high:
+            self._range_search_recursive(node.right, low, high, result)
+
+    # ================================================================== #
+    #  Árbol espejo / invertido                                           #
+    # ================================================================== #
+
+    def mirror(self) -> None:
+        """
+        Invierte el árbol sobre su eje vertical (árbol espejo).
+        Cada nodo intercambia su hijo izquierdo con el derecho.
+        NOTA: después de aplicar mirror() el BST deja de ser un BST válido.
+        Útil para demostración educativa de recursividad.
+        """
+        self._mirror_recursive(self.root)
+
+    def _mirror_recursive(self, node: Node | None) -> None:
+        """Intercambia recursivamente hijos izquierdo y derecho."""
+        if node is None:
+            return
+        node.left, node.right = node.right, node.left
+        self._mirror_recursive(node.left)
+        self._mirror_recursive(node.right)
+
+    # ================================================================== #
+    #  get_full_info extendido para BST                                   #
+    # ================================================================== #
+
+    def get_full_info(self) -> dict:
+        """Versión extendida con métricas propias del BST."""
+        info = super().get_full_info()
+        info["min"]   = self.get_min()
+        info["max"]   = self.get_max()
+        info["valid"] = self.is_valid_bst()
+        return info
