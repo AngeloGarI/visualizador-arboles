@@ -29,6 +29,7 @@ Bugs corregidos respecto a la versión original:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -46,7 +47,8 @@ try:
         QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsScene,
         QGraphicsView, QGridLayout, QHBoxLayout,
         QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-        QMainWindow, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+        QMainWindow, QMessageBox, QPushButton, QScrollArea,
+        QSizePolicy, QVBoxLayout, QWidget,
     )
 except ImportError as exc:
     raise SystemExit(
@@ -63,28 +65,25 @@ from logic import AVL, BST, BinaryTree, TreeStorage
 # ═══════════════════════════════════════════════════════════════════════ #
 
 class Colors:
-    # 🎨 PALETA MODERNA COMPLETA (NO FALTAN NINGUNO)
-    bg             = "#f8fafc"
-    panel          = "#f1f5f9"
-    panel_hover    = "#f1f5f9"
-    ink            = "#334155"
-    muted          = "#64748b"
-    border         = "#e2e8f0"
-    primary        = "#3b82f6"
-    primary_dark   = "#1d4ed8"
-    warning        = "#f59e0b"
-    danger         = "#ef4444"
-    edge           = "#94a3b8"
-    node           = "#f8fafc"
-    focus          = "#fef3c7"
-    soft_blue      = "#eff6ff"    # ✅ AGREGADO
-    soft_green     = "#dcfce7"    # ✅ AGREGADO
-    soft_orange    = "#fed7aa"    # ✅ AGREGADO
-    glass          = "rgba(255,255,255,0.85)"
-    # AVL
-    bal_ok         = "#dcfce7"
-    bal_warn       = "#fef3c7"
-    bal_bad        = "#fecaca"
+    bg           = "#eaf2ff"
+    panel        = "#ffffff"
+    ink          = "#10203f"
+    muted        = "#516580"
+    border       = "#b9ccef"
+    primary      = "#1d4ed8"
+    primary_dark = "#1e40af"
+    warning      = "#f59e0b"
+    danger       = "#dc2626"
+    edge         = "#7692bd"
+    node         = "#ffffff"
+    focus        = "#fef08a"
+    soft_blue    = "#dbeafe"
+    soft_green   = "#dcfce7"
+    soft_orange  = "#ffedd5"
+    # Balance AVL
+    bal_ok       = "#dcfce7"   # bf=0  → verde
+    bal_warn     = "#fef9c3"   # bf=±1 → amarillo
+    bal_bad      = "#fee2e2"   # bf>1  → rojo (no debería verse)
 
 
 # ═══════════════════════════════════════════════════════════════════════ #
@@ -173,23 +172,23 @@ class TreeCanvas(QGraphicsView):
     def _assign_pos(self, node, x: float, y: float, spread: float, pos: dict) -> None:
         if node is None:
             return
-        pos[id(node)] = QPointF(x, y)  # ✅ id(node) es hashable
+        pos[id(node)] = QPointF(x, y)          # ← nodo directo, no id(node)
         ns = max(spread / 2, 44)
         ny = y + 98
-        self._assign_pos(node.left, x - spread, ny, ns, pos)
+        self._assign_pos(node.left,  x - spread, ny, ns, pos)
         self._assign_pos(node.right, x + spread, ny, ns, pos)
 
     def _draw_edges(self, node, pos: dict) -> None:
         if node is None:
             return
-        start = pos[id(node)]  # ✅ id(node)
+        start = pos[id(node)]
         for child in (node.left, node.right):
             if child is None:
                 continue
-            end = pos[id(child)]  # ✅ id(child)
+            end  = pos[id(child)]
             line = QGraphicsLineItem(
                 start.x(), start.y() + 30,
-                end.x(), end.y() - 30,
+                end.x(),   end.y()   - 30,
             )
             line.setPen(QPen(QColor(self.colors.edge), 2.5,
                              Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
@@ -200,9 +199,10 @@ class TreeCanvas(QGraphicsView):
         if node is None:
             return
 
-        p = pos[id(node)]  # ✅ id(node)
-        r = 28
-        hl = node.value in self.highlight_values
+        p   = pos[id(node)]
+        r   = 28
+        hl  = node.value in self.highlight_values
+
         # Color de relleno
         if hl:
             fill, border, bw = self.colors.focus, self.colors.warning, 3
@@ -210,7 +210,8 @@ class TreeCanvas(QGraphicsView):
             bf = node.balance
             fill   = self.colors.bal_ok if bf == 0 else (
                       self.colors.bal_warn if abs(bf) == 1 else self.colors.bal_bad)
-            border, bw = self.colors.ink, 2
+            border = ("#166534" if bf == 0 else "#b45309" if abs(bf) == 1 else "#991b1b")
+            bw = 2
         else:
             fill, border, bw = self.colors.node, self.colors.ink, 2
 
@@ -231,8 +232,8 @@ class TreeCanvas(QGraphicsView):
         # Factor de balance (AVL)
         if isinstance(self.tree, AVL):
             bf     = node.balance
-            bfc    = ("#16a34a" if bf == 0 else
-                      "#b45309" if abs(bf) == 1 else "#dc2626")
+            bfc    = ("#166534" if bf == 0 else
+                      "#b45309" if abs(bf) == 1 else "#991b1b")
             bff    = QFont("Segoe UI", 7)
             bflb   = self.scene.addText(f"bf={bf:+d}", bff)
             bflb.setDefaultTextColor(QColor(bfc))
@@ -281,6 +282,7 @@ class TreeVisualizerWindow(QMainWindow):
         self.animation_speed:  int  = 300
         self._history:    list[str] = []
         self._speed_btns: list      = []
+        self._op_count:   int       = 0
 
         self.animation_timer = QTimer(self)
         self.animation_timer.timeout.connect(self._animation_step)
@@ -506,7 +508,7 @@ class TreeVisualizerWindow(QMainWindow):
         s.addWidget(self._sec("Leyenda"))
         s.addWidget(self._legend("Nodo normal",       self.colors.node,     self.colors.ink))
         s.addWidget(self._legend("Nodo resaltado",    self.colors.focus,    self.colors.warning))
-        s.addWidget(self._legend("AVL  bf = 0",       self.colors.bal_ok,   "#16a34a"))
+        s.addWidget(self._legend("AVL  bf = 0",       self.colors.bal_ok,   "#166534"))
         s.addWidget(self._legend("AVL  bf = ±1",      self.colors.bal_warn, "#b45309"))
 
         hint = QLabel("💡 Ctrl+scroll = zoom   Ctrl+0 = reset\n   Ctrl+F = buscar   Ctrl+S = guardar\n   Delete = eliminar")
@@ -603,138 +605,147 @@ class TreeVisualizerWindow(QMainWindow):
     def _apply_styles(self) -> None:
         c = self.colors
         self.setStyleSheet(f"""
-            QWidget#Root {{ 
-                background: linear-gradient(135deg, {c.bg}, #f0f7ff); 
-                color: {c.ink}; 
-                font-family: 'Segoe UI', sans-serif; 
+            QWidget#Root {{
+                background:{c.bg}; color:{c.ink};
+                font-family:"Segoe UI",Arial,sans-serif; font-size:13px;
+            }}
+            QWidget#SidebarContent,
+            QScrollArea#SidebarScroll,
+            QScrollArea#SidebarScroll > QWidget,
+            QScrollArea#SidebarScroll > QWidget > QWidget {{
+                background:transparent; border:none;
+            }}
+            QLabel#Title {{ font-size:24px; font-weight:700; color:{c.ink}; }}
+            QLabel#Subtitle {{ color:{c.muted}; font-size:13px; }}
+            QLabel#Section {{
+                font-weight:700; font-size:11px; color:{c.muted};
+                text-transform:uppercase; letter-spacing:1px;
+            }}
+            QLabel#OutputMuted, QLabel#Legend, QLabel#Hint {{
+                color:{c.muted}; font-size:12px;
+            }}
+            QLabel#PropsLabel {{ color:{c.muted}; font-size:11px; padding:3px 0; }}
+            QFrame#Panel {{
+                background:{c.panel}; border:1px solid {c.border}; border-radius:12px;
+            }}
+            QFrame#BottomPanel {{
+                background:#f4f8ff; border-top:1px solid {c.border};
+                border-bottom-left-radius:12px; border-bottom-right-radius:12px;
+            }}
+            QFrame#Metric {{
+                background:{c.soft_blue}; border:1px solid {c.border}; border-radius:8px;
+            }}
+            QLabel#MetricTitle {{ color:{c.muted}; font-size:11px; }}
+            QLabel#MetricValue {{ color:{c.ink}; font-size:18px; font-weight:700; }}
+            QFrame#TraversalCard {{
+                background:#f8fbff; border:1px solid {c.border}; border-radius:8px;
+            }}
+            QLabel#TraversalTitle {{ color:{c.muted}; font-size:11px; font-weight:700; }}
+            QLabel#TraversalValue {{ color:{c.ink}; font-size:11px; }}
+            QLabel#Status {{
+                padding:8px 14px; background:{c.soft_green};
+                border-radius:8px; color:{c.ink}; font-size:12px; font-weight:600;
+            }}
+            QLabel#Output {{ color:{c.ink}; font-size:12px; }}
+
+            QComboBox {{
+                background:#ffffff;
+                border:2px solid {c.border};
+                border-radius:8px;
+                padding:10px 14px;
+                color:{c.ink};
+                font-weight:600;
+                font-size:14px;
+            }}
+            QComboBox:hover {{ border-color:{c.primary}; }}
+            QComboBox:focus {{ border-color:{c.primary}; }}
+            QComboBox::drop-down {{ border:none; width:24px; }}
+            QComboBox::down-arrow {{
+                image:none;
+                border-left:5px solid transparent;
+                border-right:5px solid transparent;
+                border-top:6px solid {c.muted};
+                margin-right:8px;
+            }}
+            QComboBox QAbstractItemView {{
+                background:#ffffff;
+                color:{c.ink};
+                border:1px solid {c.border};
+                border-radius:8px;
+                padding:4px;
+                outline:none;
+                selection-background-color:{c.soft_blue};
+                selection-color:{c.ink};
+            }}
+            QComboBox QAbstractItemView::item {{
+                background:#ffffff;
+                color:{c.ink};
+                padding:10px 14px;
+                min-height:28px;
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background:{c.soft_blue};
+                color:{c.ink};
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background:{c.soft_blue};
+                color:{c.ink};
             }}
 
-            /* TÍTULOS */
-            QLabel#Title {{ font-size: 28px; font-weight: 700; color: {c.ink}; }}
-            QLabel#Subtitle {{ color: {c.muted}; font-size: 14px; font-weight: 500; }}
+            QLineEdit {{
+                background:#ffffff;
+                border:2px solid {c.border};
+                border-radius:8px;
+                padding:10px 14px;
+                color:{c.ink};
+                font-size:14px;
+            }}
+            QLineEdit:focus {{ border-color:{c.primary}; }}
 
-            /* PANELS */
-            QFrame#Panel {{ 
-                background: rgba(255,255,255,0.98); 
-                border: 1px solid {c.border}; 
-                border-radius: 16px;
-                box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+            QPushButton {{
+                background:{c.soft_blue}; border:1px solid {c.border};
+                border-radius:8px; padding:10px 16px;
+                font-weight:600; color:{c.ink};
             }}
-
-            /* BOTONES - PERFECTOS */
-            QPushButton {{ 
-                color: {c.ink} !important; 
-                background: rgba(255,255,255,0.9);     /* ← BLANCO CLARO */
-                border: 2px solid {c.border}; 
-                border-radius: 12px; 
-                padding: 12px 20px; 
-                font-weight: 600; 
-                font-size: 14px;                        /* ← MÁS GRANDE */
-                min-height: 44px;
+            QPushButton:hover {{ background:{c.primary}; color:#ffffff; border-color:{c.primary}; }}
+            QPushButton#PrimaryButton {{
+                background:{c.primary}; color:#ffffff; border:none;
             }}
-            QPushButton:hover {{ 
-                background: rgba(29,78,216,0.08);       /* ← AZUL SUTIL */
-                border-color: {c.primary};
-                box-shadow: 0 8px 25px rgba(29,78,216,0.15);
-                transform: translateY(-1px);
+            QPushButton#PrimaryButton:hover {{ background:{c.primary_dark}; }}
+            QPushButton#DangerButton {{
+                background:{c.soft_orange}; color:#991b1b; border-color:#fed7aa;
             }}
-            QPushButton#PrimaryButton {{ 
-                color: white !important; 
-                background: linear-gradient(135deg, {c.primary}, {c.primary_dark});
-                box-shadow: 0 8px 25px rgba(29,78,216,0.3);
+            QPushButton#DangerButton:hover {{ background:#fcd2a2; color:#991b1b; }}
+            QPushButton#WarningButton {{
+                background:#fef9c3; color:#92400e; border-color:#fde68a;
             }}
-            QPushButton#PrimaryButton:hover {{ 
-                box-shadow: 0 12px 30px rgba(29,78,216,0.4);
-                transform: translateY(-2px);
+            QPushButton#WarningButton:hover {{ background:#fde68a; color:#92400e; }}
+            QPushButton#SpeedButton {{
+                background:{c.soft_blue}; border:1px solid {c.border};
+                border-radius:8px; padding:6px 10px; font-size:12px;
             }}
-            QPushButton#DangerButton {{ 
-                color: {c.danger} !important; 
-                background: rgba(254,226,226,0.9);      /* ← ROJO CLARO */
-                border-color: #fca5a5;
+            QPushButton#SpeedButton:hover {{ background:{c.primary}; color:#ffffff; }}
+            QPushButton#SpeedButton:checked {{
+                background:{c.primary}; color:#ffffff; border-color:{c.primary};
             }}
-            QPushButton#WarningButton {{ 
-                color: #92400e !important; 
-                background: rgba(254,243,199,0.9);      /* ← AMARILLO CLARO */
+            QFrame#Separator {{
+                color:{c.border}; background:{c.border}; max-height:1px; border:none;
             }}
-            QPushButton#SpeedButton:checked {{ 
-                color: white !important; 
-                background: linear-gradient(135deg, {c.primary}, {c.primary_dark});
+            QListWidget#HistoryList {{
+                background:#f8fbff; border:1px solid {c.border};
+                border-radius:8px; font-size:11px; color:{c.ink};
             }}
-
-            /* INPUTS */
-            QLineEdit, QComboBox {{ 
-                color: {c.ink} !important; 
-                background: white; 
-                border: 2px solid {c.border}; 
-                border-radius: 12px; 
-                padding: 12px 16px; 
-                font-size: 14px;
-                font-weight: 500;
+            QListWidget#HistoryList::item {{
+                padding:4px 8px; border-bottom:1px solid {c.border};
             }}
-
-            /* MÉTRICAS */
-            QFrame#Metric {{ 
-                background: rgba(219,234,254,0.7);      /* ← AZUL SUTIL */
-                border: 1px solid {c.border}; 
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            QMenuBar {{ background:{c.panel}; font-size:13px; }}
+            QMenuBar::item:selected {{ background:{c.soft_blue}; border-radius:4px; }}
+            QMenu {{
+                background:{c.panel}; border:1px solid {c.border}; border-radius:6px;
             }}
-            QLabel#MetricTitle {{ color: {c.muted}; font-size: 12px; font-weight: 500; }}
-            QLabel#MetricValue {{ color: {c.ink}; font-size: 20px; font-weight: 700; }}
-
-            /* STATUS */
-            QLabel#Status {{ 
-                color: {c.ink}; 
-                background: rgba(220,252,231,0.9); 
-                border-radius: 12px; 
-                padding: 14px 24px; 
-                font-weight: 600; 
-                font-size: 14px;
-                box-shadow: 0 6px 20px rgba(34,197,94,0.25);
-            }}
-
-            /* TEXTOS - NEGRO EN TODO */
-            QLabel {{ color: {c.ink} !important; }}
-            QLabel#Section {{ 
-                color: {c.primary} !important; 
-                font-weight: 700; 
-                font-size: 12px; 
-                text-transform: uppercase; 
-                letter-spacing: 1px;
-            }}
-            QLabel#TraversalTitle {{ 
-                color: {c.muted}; 
-                font-size: 12px; 
-                font-weight: 600; 
-            }}
-            QLabel#TraversalValue {{ 
-                color: {c.ink}; 
-                font-size: 12px; 
-            }}
-
-            /* LISTA */
-            QListWidget#HistoryList {{ 
-                color: {c.ink}; 
-                background: rgba(255,255,255,0.95); 
-                border: 1px solid {c.border}; 
-                border-radius: 12px;
-                font-size: 13px;
-            }}
-
-            /* SCROLLBARS */
-            QScrollBar:vertical {{ 
-                background: rgba(0,0,0,0.05); 
-                width: 8px; 
-                border-radius: 4px; 
-            }}
-            QScrollBar::handle:vertical {{ 
-                background: {c.primary}66; 
-                border-radius: 4px; 
-            }}
-
-            /* ANIMACIONES */
-            * {{ transition: all 0.3s cubic-bezier(0.4,0,0.2,1); }}
+            QMenu::item:selected {{ background:{c.soft_blue}; }}
         """)
+
     # ================================================================== #
     #  Operaciones                                                        #
     # ================================================================== #
@@ -752,9 +763,20 @@ class TreeVisualizerWindow(QMainWindow):
     def insert_value(self) -> None:
         value = self._int(self.value_input)
         if value is None: return
-        path, rots = self._do_insert(value)
-        visited = path + [value]
+        count_before = self.tree.node_count
+        path, rots   = self._do_insert(value)
+        is_duplicate = self.tree.node_count == count_before
+        visited      = path + [value]
         self.value_input.clear()
+        if is_duplicate:
+            self.traversal_label.setText(
+                f"⚠ El valor {value} ya existe en el árbol — no se insertaron duplicados."
+            )
+            self.rotation_label.setText("Los árboles BST y AVL no permiten valores repetidos.")
+            self.status_label.setText(f"Duplicado ignorado: {value}  |  Nodos: {self.tree.node_count}")
+            self._log(f"Duplicado ignorado: {value}")
+            self.animate_values(path, final={value})
+            return
         self.traversal_label.setText(f"Inserción de {value}  |  Camino: {self._fmt(visited)}")
         self.rotation_label.setText(
             ("Rotaciones: " + ", ".join(rots) if rots else "Sin rotaciones.") +
@@ -826,6 +848,10 @@ class TreeVisualizerWindow(QMainWindow):
         self.animate_values(vals)
 
     def show_level_order(self) -> None:
+        if self.tree.root is None:
+            self.traversal_label.setText("El árbol está vacío.")
+            self.status_label.setText("Sin nodos para recorrer.")
+            return
         vals   = self.tree.level_order()
         levels = self.tree.nodes_by_level()
         self.traversal_label.setText(f"Nivel-Order (BFS): {self._fmt(vals)}")
@@ -956,6 +982,9 @@ class TreeVisualizerWindow(QMainWindow):
         if not isinstance(self.tree, (BST, AVL)):
             QMessageBox.information(self, "Solo BST/AVL", "Espejo aplica a BST y AVL.")
             return
+        if self.tree.root is None:
+            QMessageBox.information(self, "Árbol vacío", "Inserta valores antes de aplicar espejo.")
+            return
         r = QMessageBox.question(
             self, "Espejo",
             "Esto invertirá el árbol sobre su eje vertical.\n"
@@ -993,8 +1022,15 @@ class TreeVisualizerWindow(QMainWindow):
     def save_tree(self) -> None:
         filename, ok = QInputDialog.getText(self, "Guardar árbol", "Nombre del archivo:")
         if not ok or not filename.strip(): return
+        # Eliminar caracteres inválidos en nombres de archivo
+        safe = re.sub(r'[\\/:*?"<>|]', '_', filename.strip())
+        if safe != filename.strip():
+            QMessageBox.information(
+                self, "Nombre ajustado",
+                f"Se reemplazaron caracteres inválidos:\n'{filename.strip()}' → '{safe}'"
+            )
         try:
-            path = self.storage.save(self.tree, filename.strip())
+            path = self.storage.save(self.tree, safe)
             self.status_label.setText(f"Guardado: {path}")
             self._log(f"Guardar → {filename.strip()}.json")
             QMessageBox.information(self, "Guardado", f"Árbol guardado en:\n{path}")
@@ -1014,13 +1050,21 @@ class TreeVisualizerWindow(QMainWindow):
             self.tree_type_combo.blockSignals(True)
             self.tree_type_combo.setCurrentText(self._disp_type(self.tree))
             self.tree_type_combo.blockSignals(False)
-            self.highlight_values = set()
             name = os.path.basename(fp)
             self.traversal_label.setText(f"Cargado: {name}")
             self.rotation_label.setText("Estructura reconstruida desde JSON.")
             self.status_label.setText(f"Árbol cargado  |  Raíz: {self._root()}")
             self._log(f"Cargar ← {name}")
-            self.refresh()
+            # Resaltar la raíz al cargar para dar feedback visual inmediato
+            root_val = self.tree.root_value
+            if root_val is not None:
+                self.animate_values(
+                    self.tree.level_order()[:min(7, self.tree.node_count)],
+                    final={root_val}
+                )
+            else:
+                self.highlight_values = set()
+                self.refresh()
         except Exception as exc:
             QMessageBox.critical(self, "Error al cargar", str(exc))
 
@@ -1098,7 +1142,8 @@ class TreeVisualizerWindow(QMainWindow):
     # ================================================================== #
 
     def _log(self, action: str) -> None:
-        self._history.insert(0, action)
+        self._op_count += 1
+        self._history.insert(0, f"#{self._op_count}  {action}")
         self._history = self._history[:15]
         self.history_list.clear()
         for i, entry in enumerate(self._history):
@@ -1161,6 +1206,11 @@ class TreeVisualizerWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self.animation_timer.stop()                         # BUG FIX
         super().closeEvent(event)
+
+
+# ═══════════════════════════════════════════════════════════════════════ #
+#  Entry point                                                             #
+# ═══════════════════════════════════════════════════════════════════════ #
 
 def main() -> None:
     app = QApplication(sys.argv)
